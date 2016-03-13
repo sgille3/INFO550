@@ -1,0 +1,142 @@
+---
+title: "Homework Solutions"
+author: "Scott Gillespie"
+date: "March 23, 2016"
+output: pdf_document
+---
+
+Specify url to obtain data, set working directory, and download database
+
+```{r}
+#url<-"http://steviep42.bitbucket.org/YOUTUBE.DIR/restaurants.db"
+#setwd("C:/Users/sgille3/Projects/Course Work/INFO - Software Engineering/Homework")
+#download.file(url, "restaurants.db")
+```
+
+Call DBI library and connect to "restaurants" database that exists in the local working directory
+
+```{r, echo=FALSE}
+library(DBI)
+library(RSQLite)
+hwDB <- dbConnect(RSQLite::SQLite(), dbname="restaurants.db")
+```
+
+Solutions for SQLite questions 1 - 7 (copied from SQLite DB)
+
+```{r}
+##SQL Questions
+sqlQuestion1<-("SELECT COUNT(*) FROM violations
+               WHERE description LIKE ('%vermin%');") 
+
+
+sqlQuestion2<-("SELECT COUNT(*) FROM violations
+                WHERE ((risk_category = 'High Risk') AND description NOT LIKE ('%vermin%'));")
+
+
+sqlQuestion3<-("SELECT COUNT(*) FROM inspections
+                WHERE ((date BETWEEN 20140401 AND 20140501) AND (type LIKE ('%routine%')));")
+
+
+sqlQuestion4<-("SELECT business_id, score, date, type FROM inspections
+                WHERE score != 'NA' 
+                ORDER BY score ASC
+                LIMIT 10;")
+
+
+sqlQuestion5<-("SELECT DISTINCT postal_code FROM businesses
+                WHERE LENGTH(postal_code) = 5 AND postal_code != '00000';")
+
+
+sqlQuestion6<-("SELECT name, postal_code, COUNT(name) AS mex_count FROM businesses
+                WHERE name LIKE ('%mex%')
+                GROUP BY postal_code
+                ORDER BY mex_count DESC;")
+
+
+sqlQuestion7<-("SELECT businesses.business_id, name, score FROM businesses, inspections
+                WHERE ((businesses.business_id = inspections.business_id) AND (name LIKE ('%mex%')) AND (score != 'NA')) 
+                ORDER BY score ASC
+                LIMIT 10;")
+
+sqlList<-list()
+for (i in 1:7){
+  sqlList[i] <- list(get(paste0('sqlQuestion',i)))
+}
+sqlList
+
+sqlFunction<-function(x){
+  dbFetch(dbSendQuery(hwDB, x))
+}
+
+question<-list()
+for (i in 1:7){
+  question[[i]] <- sqlFunction(sqlList[[i]])
+}
+question
+```
+
+Creating dplyr object tables from the SQLite database
+
+```{r}
+library(dplyr)
+hwDBdplyr   <- src_sqlite(path="restaurants.db")
+businesses  <- tbl(hwDBdplyr, "businesses")
+inspections <- tbl(hwDBdplyr, "inspections")
+violations  <- tbl(hwDBdplyr, "violations")
+```
+
+
+
+```{r}
+dplyrquestion8 <- violations %>% 
+                  filter(description %like% ("%vermin%")) %>% 
+                  summarise(Count=n())
+
+dplyrquestion9 <- violations %>% 
+                  filter(description %not like% ("%vermin%"), (risk_category == "High Risk")) %>% 
+                  summarise(Count=n())
+
+dplyrquestion10 <- inspections %>% 
+                   filter(between(date, '20140401', '20140501'), (type %like% ('%routine%'))) %>% 
+                   summarise(Count=n())
+
+dplyrquestion11 <- head(inspections %>% 
+                        select(business_id, score, date, type) %>% 
+                        filter(score != 'NA') %>% 
+                        arrange((score)),10)
+
+dplyrquestion12 <- head(distinct(businesses %>% 
+                        select(postal_code) %>% 
+                        filter(length(postal_code) == 5, (postal_code != '00000'))),50)
+
+dplyrquestion13 <- head(businesses %>% 
+                        select(name, postal_code) %>% 
+                        filter(name %like% ('%MEX%')) %>% 
+                        group_by(postal_code) %>% 
+                        summarise(mex_count=count(name)) %>% 
+                        arrange(desc(mex_count)), 50)
+
+dplyrquestion14 <- head(inner_join(businesses, inspections,"business_id") %>% 
+                              select(business_id, name, score) %>% 
+                              filter(name %like% ('%MEX%'), (score != 'NA')) %>% arrange(score),10)
+```
+
+
+```{r}
+
+nytimes_movies <- function(){
+  library(XML)
+  library(dplyr)
+  library(jsonlite)
+  jsonAPI <- fromJSON("hw1.json")
+  #http://api.nytimes.com/svc/movies/v2/reviews/all.json?api-key=4ce21e5e6b299a7e95d2a14a12345f5e:12:74694642
+  retdf <- jsonAPI$results %>% select(display_title, mpaa_rating, critics_pick, thousand_best, headline, opening_date) %>% rename(names=display_title)
+  
+  return(retdf)
+}
+nyt <- nytimes_movies()
+names(nyt)
+
+nyt %>% select(names, critics_pick, headline)
+```
+
