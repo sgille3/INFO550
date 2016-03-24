@@ -1,5 +1,5 @@
 ---
-title: "INFO 550 Homework Solutions"
+title: "INFO 550 Homework 1 Solutions"
 author: "Scott Gillespie"
 date: "March 23, 2016"
 output: html_document
@@ -18,7 +18,7 @@ library(RSQLite)
 hwDB <- dbConnect(RSQLite::SQLite(), dbname="restaurants.db")
 ```
 
-<h2>PART I:</h2>
+<h2>PART I:</h2> 
 
 Solutions for SQLite questions #1 - 7 (copied from SQLite database)
 
@@ -26,8 +26,8 @@ The proceeding chunk performs the following tasks:
 
 1.) Creates a character string containing SQL code for each question. \
 2.) Pastes the character string for each question into a single list named 'sqlList' using a for loop.\
-3.) Establishes a function (called sqlFunction) to calculate the results of an input SQL query using the 'dbFetch' and 'dbSendQuery' functions from the DBI package.\
-4.) Outputs the results of each query into a list called 'output' using a second for loop that calls 'sqlFunction' for each question string in 'sqlList'.
+3.) Utilizes a function ("sqlFunction") to calculate the results of an input SQL query using the 'dbFetch' and 'dbSendQuery' functions from the DBI package.\
+4.) Outputs the results of each query into a list.
 
 ```{r, warning=FALSE, message=FALSE}
 sqlQuestion1<-("SELECT COUNT(*) FROM violations
@@ -88,8 +88,8 @@ businesses  <- tbl(hwDBdplyr, "businesses")
 inspections <- tbl(hwDBdplyr, "inspections")
 violations  <- tbl(hwDBdplyr, "violations")
 ```
-
-
+\
+Running each query as before, except now utilizing dplyr package functionalities
 
 ```{r, warning=FALSE, message=FALSE}
 dplyrQuestion8 <- violations %>% 
@@ -141,6 +141,8 @@ dplyrQuestion14
 
 <h2>PART II:</h2>
 
+A function to quickly pull and select variables from JSON-formatted data, utilizing a web-based API provided by the NY Times. The data was copied from the NY Times website and stored locally as a file called "hw1.JSON". This file is provided on github and the direct weblink is commented-out within the function.
+
 ```{r, warning=FALSE, message=FALSE}
 library(XML)
 library(dplyr)
@@ -150,7 +152,9 @@ nytimes_movies <- function(){
 
   jsonAPI <- fromJSON("C:/Users/sgille3/Projects/Course Work/INFO - Software Engineering/Homework/hw1.json")
   #http://api.nytimes.com/svc/movies/v2/reviews/all.json?api-key=4ce21e5e6b299a7e95d2a14a12345f5e:12:74694642
-  retdf <- jsonAPI$results %>% select(display_title, mpaa_rating, critics_pick, thousand_best, headline, opening_date) %>% rename(names=display_title)
+  retdf <- jsonAPI$results %>% 
+            select(display_title, mpaa_rating, critics_pick, thousand_best, headline, opening_date) %>% 
+            rename(names=display_title)
   
   return(retdf)
 }
@@ -164,6 +168,10 @@ nyt %>%
 
 <h2>PART III:</h2>
 
+<h3>Plot 1:</h3>
+
+Average flight delays in minutes for US carriers. Arrival delays are summarized in red, and departure delays are summarized in blue. The research hypothesis concerned if more regional airlines (e.g. Hawaiian Airlines, Alaska Airlines, and Virgin America) performed better than major carriers (e.g. Frontier Airlines, Southwest Airlines, and United Airlines). Evidence from the plot seems to indicate a possible association between flight carrier type (regional vs. national) and average flight delays.
+
 ```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.width=12,fig.height=9}
 library(nycflights13)
 library(ggplot2)
@@ -172,7 +180,7 @@ library(plotly)
 airlines$carrier <- as.character(airlines$carrier)
 
 ##joinData
-joinedData <- inner_join(flights, airlines,"carrier") %>% 
+plot1Join <- inner_join(flights, airlines,"carrier") %>% 
   na.omit() %>%
   select(year, dep_delay, arr_delay, carrier, name) %>%
   group_by(carrier, name) %>%
@@ -181,13 +189,13 @@ joinedData <- inner_join(flights, airlines,"carrier") %>%
   mutate(seDepDelay = sdDepDelay/sqrt(n), seArrDelay = sdArrDelay/sqrt(n))
   
 ##depDelay
-depDelay <- joinedData %>% 
+depDelay <- plot1Join %>% 
   select(name, carrier, avgDepDelay, seDepDelay) %>%
   rename(avgDelay = avgDepDelay, seDelay = seDepDelay) %>%
   mutate(Type='Departure')
     
 ##arrDelay
-arrDelay <- joinedData %>% 
+arrDelay <- plot1Join %>% 
   select(name, carrier, avgArrDelay, seArrDelay) %>%
   rename(avgDelay = avgArrDelay, seDelay = seArrDelay) %>%
   mutate(Type='Arrival')
@@ -208,15 +216,48 @@ ggplot(fullData, aes(x=reorder(name,-avgDelay),y=avgDelay, fill=Type)) +
     labs(x="Flight Carrier", y="Average Delay (Minutes)") +
     scale_color_discrete(labels=c("Arrival", "Depature")) +
     theme(axis.title = element_text(color="#000000", face="bold", size=18),
-          axis.text.x = element_text(face="bold", color="#000000", size=16, angle=55, hjust=1),
+          axis.text.x = element_text(face="bold", color="#000000", size=16, angle=58, hjust=1),
           axis.text.y = element_text(face="bold", color="#000000", size=16),
           legend.text = element_text(face="bold", color="#000000", size=24),
           legend.title= element_blank(), legend.position =c(0.89,0.90),
           axis.ticks = element_line(size = 1.5),
           panel.border = element_rect(linetype = "solid", colour = "black", size = 1.25))
 
+```
+\
+\
+\
+
+<h3>Plot 2:</h3>
+
+Pearson correlations between arrival delay, flight speed, and number of seats and engines. Lighter blue indicates stronger associations; whereas, darker blue indicates weaker association between the variables. From the plot, number of seats seems to correlate highly with speed of the jet; likewise, number of engines has moderate correlation with seats and speed. Interestingly, arrival delay fails to associate strongly with any of these characteristics.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.width=8, fig.height=8}
+
+library(reshape2)
+plot2Join <- inner_join(flights, planes,"tailnum") %>%
+  na.omit() %>% 
+  mutate(Engines=engines, Seats=seats, Speed=speed, Delay=arr_delay) %>% 
+  select(Delay, Speed, Seats, Engines)
+
+plot2Corr<-as.matrix(cor(plot2Join))
+
+lowerHalf<-function(x){
+  x[upper.tri(x)] <- NA
+  return(x)
+}
+plot2Corr<-lowerHalf(plot2Corr)
+meltPlot2Corr<-melt(plot2Corr)
+
+ggplot(data=meltPlot2Corr, aes(x=Var1, y=Var2, fill=value)) +
+  geom_tile(color = "white") +
+  theme_minimal() +
+  coord_fixed() +
+  theme(axis.title = element_blank(),
+  axis.text.x = element_text(face="bold", color="#000000", size=16),
+  axis.text.y = element_text(face="bold", color="#000000", size=16),
+  legend.text = element_text(face="bold", color="#000000", size=16),
+  axis.ticks = element_line(size = 1.5),
+  legend.title= element_blank())
 
 ```
-
-
-
