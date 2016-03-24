@@ -1,30 +1,35 @@
 ---
-title: "Homework Solutions"
+title: "INFO 550 Homework Solutions"
 author: "Scott Gillespie"
 date: "March 23, 2016"
-output: pdf_document
+output: html_document
 ---
-
-Specify url to obtain data, set working directory, and download database
-
-```{r}
+\
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
 #url<-"http://steviep42.bitbucket.org/YOUTUBE.DIR/restaurants.db"
-#setwd("C:/Users/sgille3/Projects/Course Work/INFO - Software Engineering/Homework")
+setwd("C:/Users/sgille3/Projects/Course Work/INFO - Software Engineering/Homework")
 #download.file(url, "restaurants.db")
 ```
 
-Call DBI library and connect to "restaurants" database that exists in the local working directory
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
 library(DBI)
 library(RSQLite)
 hwDB <- dbConnect(RSQLite::SQLite(), dbname="restaurants.db")
 ```
 
-Solutions for SQLite questions 1 - 7 (copied from SQLite DB)
+<h2>PART I:</h2>
 
-```{r}
-##SQL Questions
+Solutions for SQLite questions #1 - 7 (copied from SQLite database)
+
+The proceeding chunk performs the following tasks:
+
+1.) Creates a character string containing SQL code for each question. \
+2.) Pastes the character string for each question into a single list named 'sqlList' using a for loop.\
+3.) Establishes a function (called sqlFunction) to calculate the results of an input SQL query using the 'dbFetch' and 'dbSendQuery' functions from the DBI package.\
+4.) Outputs the results of each query into a list called 'output' using a second for loop that calls 'sqlFunction' for each question string in 'sqlList'.
+
+```{r, warning=FALSE, message=FALSE}
 sqlQuestion1<-("SELECT COUNT(*) FROM violations
                WHERE description LIKE ('%vermin%');") 
 
@@ -62,22 +67,21 @@ sqlList<-list()
 for (i in 1:7){
   sqlList[i] <- list(get(paste0('sqlQuestion',i)))
 }
-sqlList
 
 sqlFunction<-function(x){
   dbFetch(dbSendQuery(hwDB, x))
 }
 
-question<-list()
+output<-list()
 for (i in 1:7){
-  question[[i]] <- sqlFunction(sqlList[[i]])
+  output[[i]] <- sqlFunction(sqlList[[i]])
 }
-question
+output
 ```
-
+\
 Creating dplyr object tables from the SQLite database
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 library(dplyr)
 hwDBdplyr   <- src_sqlite(path="restaurants.db")
 businesses  <- tbl(hwDBdplyr, "businesses")
@@ -87,48 +91,64 @@ violations  <- tbl(hwDBdplyr, "violations")
 
 
 
-```{r}
-dplyrquestion8 <- violations %>% 
+```{r, warning=FALSE, message=FALSE}
+dplyrQuestion8 <- violations %>% 
                   filter(description %like% ("%vermin%")) %>% 
                   summarise(Count=n())
+dplyrQuestion8
 
-dplyrquestion9 <- violations %>% 
+
+dplyrQuestion9 <- violations %>% 
                   filter(description %not like% ("%vermin%"), (risk_category == "High Risk")) %>% 
                   summarise(Count=n())
+dplyrQuestion9
 
-dplyrquestion10 <- inspections %>% 
+
+dplyrQuestion10 <- inspections %>% 
                    filter(between(date, '20140401', '20140501'), (type %like% ('%routine%'))) %>% 
                    summarise(Count=n())
+dplyrQuestion10
 
-dplyrquestion11 <- head(inspections %>% 
+
+dplyrQuestion11 <- head(inspections %>% 
                         select(business_id, score, date, type) %>% 
                         filter(score != 'NA') %>% 
                         arrange((score)),10)
+dplyrQuestion11
 
-dplyrquestion12 <- head(distinct(businesses %>% 
+
+dplyrQuestion12 <- head(distinct(businesses %>% 
                         select(postal_code) %>% 
                         filter(length(postal_code) == 5, (postal_code != '00000'))),50)
+dplyrQuestion12
 
-dplyrquestion13 <- head(businesses %>% 
+
+dplyrQuestion13 <- head(businesses %>% 
                         select(name, postal_code) %>% 
                         filter(name %like% ('%MEX%')) %>% 
                         group_by(postal_code) %>% 
                         summarise(mex_count=count(name)) %>% 
                         arrange(desc(mex_count)), 50)
+dplyrQuestion13
 
-dplyrquestion14 <- head(inner_join(businesses, inspections,"business_id") %>% 
+
+dplyrQuestion14 <- head(inner_join(businesses, inspections,"business_id") %>% 
                               select(business_id, name, score) %>% 
                               filter(name %like% ('%MEX%'), (score != 'NA')) %>% arrange(score),10)
+dplyrQuestion14
 ```
+\
 
+<h2>PART II:</h2>
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
+library(XML)
+library(dplyr)
+library(jsonlite)
 
 nytimes_movies <- function(){
-  library(XML)
-  library(dplyr)
-  library(jsonlite)
-  jsonAPI <- fromJSON("hw1.json")
+
+  jsonAPI <- fromJSON("C:/Users/sgille3/Projects/Course Work/INFO - Software Engineering/Homework/hw1.json")
   #http://api.nytimes.com/svc/movies/v2/reviews/all.json?api-key=4ce21e5e6b299a7e95d2a14a12345f5e:12:74694642
   retdf <- jsonAPI$results %>% select(display_title, mpaa_rating, critics_pick, thousand_best, headline, opening_date) %>% rename(names=display_title)
   
@@ -137,6 +157,66 @@ nytimes_movies <- function(){
 nyt <- nytimes_movies()
 names(nyt)
 
-nyt %>% select(names, critics_pick, headline)
+nyt %>% 
+  select(names, critics_pick, headline)
 ```
+\
+
+<h2>PART III:</h2>
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.width=12,fig.height=9}
+library(nycflights13)
+library(ggplot2)
+library(plotly)
+
+airlines$carrier <- as.character(airlines$carrier)
+
+##joinData
+joinedData <- inner_join(flights, airlines,"carrier") %>% 
+  na.omit() %>%
+  select(year, dep_delay, arr_delay, carrier, name) %>%
+  group_by(carrier, name) %>%
+  summarize(n = n(), avgDepDelay = mean(dep_delay), sdDepDelay = sd(dep_delay),
+            n = n(), avgArrDelay = mean(arr_delay), sdArrDelay = sd(arr_delay)) %>%
+  mutate(seDepDelay = sdDepDelay/sqrt(n), seArrDelay = sdArrDelay/sqrt(n))
+  
+##depDelay
+depDelay <- joinedData %>% 
+  select(name, carrier, avgDepDelay, seDepDelay) %>%
+  rename(avgDelay = avgDepDelay, seDelay = seDepDelay) %>%
+  mutate(Type='Departure')
+    
+##arrDelay
+arrDelay <- joinedData %>% 
+  select(name, carrier, avgArrDelay, seArrDelay) %>%
+  rename(avgDelay = avgArrDelay, seDelay = seArrDelay) %>%
+  mutate(Type='Arrival')
+
+##fullData
+
+fullData <- rbind(depDelay,arrDelay)
+
+ggplot(fullData, aes(x=reorder(name,-avgDelay),y=avgDelay, fill=Type)) + 
+          geom_bar(position=position_dodge(), 
+             color="black", stat = "identity", size=0.3) +
+          geom_errorbar(position=position_dodge(0.9), width=0.2, size=0.3, 
+                  aes(ymin=avgDelay-seDelay,ymax=avgDelay+seDelay)) +
+          coord_cartesian(ylim=c(-10,25)) +
+          scale_y_continuous(breaks=c(-10,-5,0,5,10,15,20,25)) +
+            theme_bw() + 
+    geom_abline(intercept=0,slope=0, size=1.25) +
+    labs(x="Flight Carrier", y="Average Delay (Minutes)") +
+    scale_color_discrete(labels=c("Arrival", "Depature")) +
+    theme(axis.title = element_text(color="#000000", face="bold", size=18),
+          axis.text.x = element_text(face="bold", color="#000000", size=16, angle=55, hjust=1),
+          axis.text.y = element_text(face="bold", color="#000000", size=16),
+          legend.text = element_text(face="bold", color="#000000", size=24),
+          legend.title= element_blank(), legend.position =c(0.89,0.90),
+          axis.ticks = element_line(size = 1.5),
+          panel.border = element_rect(linetype = "solid", colour = "black", size = 1.25))
+
+
+```
+
+
 
