@@ -1,0 +1,222 @@
+---
+title: "INFO 550 Markdown"
+author: "Scott Gillespie"
+date: "May 4, 2016"
+output: html_document
+runtime: shiny
+---
+\
+
+<h3>This Shiny application serves a dual purpose:</h3>\
+
+1.) Considers the longitudinal change from 2010 to 2015 in state deficiencies and penalties for nursing homes as a percentage relative to all other states, utilizing an interactive choropleth. \
+2.) Evaluates static nursing home ratings and ancillary characteristics (numbers of beds, nursing hours, fines, and penalties) by governmental payer program (Medicare vs. Medicaid vs. Combination). Moreover, the application allows for users to visually evaluate the raw static data by selecting a number of desired observations to view.\
+\
+
+
+<h3>Part 1</h3>
+
+This code chunk is responsible for data cleaning and preparation for the Shiny application. Specifically: \
+
+1.) The dataframes were queried from a SQLite database that contained US nursing home data. These SQLite queries are provided on GitHub and return the tables: <em>deficienciesPenalties</em> and <em>providers</em>. \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;a.) <em>deficienciesPenalties</em> pulls together data from the "Deficiencies_Download" and "Penalties_Download" csv files, retrieved from &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;https://data.medicare.gov/data/nursing-home-compare. \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;b.) <em>providers</em> comes from a simple SQLite query that keeps only nursing home variables of interest for each provider. \
+      
+2.) Utilizing the 'dplyr' package, summary variables are calculated and data subsets are created to satisfy each condition for the Shiny application. 
+
+```{r, warning=FALSE}
+library(googleVis)
+library(shiny)
+library(dplyr)
+
+setwd("C:/Users/sgille3/Desktop/INFO550Final")
+
+##Name DB and call tables from the DB for analysis and cleaning
+projectBdplyr         <- src_sqlite(path="finalProjectDB.db")
+deficienciesPenalties <- as.data.frame(tbl(projectBdplyr, "deficienciesPenaltiesFinal"))
+providers             <- as.data.frame(tbl(projectBdplyr, "providersQuery"))
+
+
+##Sum number of deficiencies by year
+deficiencesYear <- as.data.frame(deficienciesPenalties %>%
+                                   group_by(year) %>%
+                                   summarise(numDeficienciesYearState = sum(numDeficiencies)))
+
+##Sum number of penalties by year
+penaltiesYear   <- as.data.frame(deficienciesPenalties %>%
+                                   group_by(year) %>%
+                                   summarise(numPenaltiesYearState = sum(numPenalties)) %>%
+                                   select(numPenaltiesYearState))
+
+##Bind rows of deficiencesYear and penaltiesYear to get all frequencies by year
+yearFrequencies <- cbind(deficiencesYear, penaltiesYear)
+
+
+##Inner join SQLite dataframe with new yearFrequencies dataframe and calculate state deficiency and penalty percents
+percentages     <- inner_join(deficienciesPenalties, yearFrequencies, c("year")) %>%
+                    group_by(state, year) %>%
+                    summarise(defPercentage = round(((numDeficiencies/numDeficienciesYearState)*100),2),
+                    penPercentage = round(((numPenalties/numPenaltiesYearState)*100),2)) %>%
+                    select(year,state,defPercentage, penPercentage)
+
+##Create dataframe that represents Minimum and Maximum percents for deficiencies and penalties, capped years of observation between 2010 and 2015
+datminmax    <- data.frame(state=rep(c("Min", "Max"),6), 
+                           defPercentage=rep(c(0, 100),6),
+                           penPercentage=rep(c(0, 100),6),
+                           year=sort(rep(seq(2010,2015,1),2)))
+
+##Rbind percentages and minmax dataframes
+shinyDefPenData <- as.data.frame(rbind(percentages, datminmax)) 
+
+
+##Drop observations that are "NaN"
+shinyDefData <- shinyDefPenData %>% 
+                  select(year, state, defPercentage) %>%
+                  rename(percentage = defPercentage) %>%
+                  filter(percentage != "NaN")
+
+shinyPenData <- shinyDefPenData %>%
+                  select(year, state, penPercentage) %>%
+                  rename(percentage = penPercentage)  %>%
+                  filter(percentage != "NaN")
+
+
+##Static datasets
+##Create separate datasets by government payer type for the "switch" statement in Shiny
+medicareOnly <- providers %>%
+                  filter(CERTIFICATION=="Medicare") %>%
+                  select(BEDCERT, overall_rating, TOTHRD, WEIGHTED_ALL_CYCLES_SCORE, FINE_CNT, TOT_PENLTY_CNT) %>%
+                  rename("Number Beds" = BEDCERT, "Nursing Rating" = overall_rating, "Nursing Hours" = TOTHRD,
+                  "Weighted Ratings"= WEIGHTED_ALL_CYCLES_SCORE, "Fine Counts" = FINE_CNT, 
+                  "Penalty Counts" = TOT_PENLTY_CNT)
+
+medicaidOnly <- providers %>%
+                  filter(CERTIFICATION=="Medicaid") %>%
+                  select(BEDCERT, overall_rating, TOTHRD, WEIGHTED_ALL_CYCLES_SCORE, FINE_CNT, TOT_PENLTY_CNT) %>%
+                  rename("Number Beds" = BEDCERT, "Nursing Rating" = overall_rating, "Nursing Hours" = TOTHRD,
+                  "Weighted Ratings"= WEIGHTED_ALL_CYCLES_SCORE, "Fine Counts" = FINE_CNT, 
+                  "Penalty Counts" = TOT_PENLTY_CNT)
+
+medicareAndMedicaidOnly <- providers %>%
+                  filter(CERTIFICATION=="Medicare and Medicaid") %>%
+                  select(BEDCERT, overall_rating, TOTHRD, WEIGHTED_ALL_CYCLES_SCORE, FINE_CNT, TOT_PENLTY_CNT) %>%
+                  rename("Number Beds" = BEDCERT, "Nursing Rating" = overall_rating, "Nursing Hours" = TOTHRD,
+                  "Weighted Ratings"= WEIGHTED_ALL_CYCLES_SCORE, "Fine Counts" = FINE_CNT, 
+                  "Penalty Counts" = TOT_PENLTY_CNT)
+```
+\
+\
+
+<h3>Part 2</h3>
+
+The following code chunk utilizes the dataframes created in the previous chunk to form the Shiny application. The code below consists of UI and Server code blocks that consists of standard Shiny nomenclature and user-defined inputs and outputs. Code blocks borrow from online sources in some places, and these areas are indicated by a comment with the link to the source code.
+
+
+```{r, warning=FALSE, results="hide"}
+library(shiny)
+
+shinyApp(
+  
+  #Source: http://www.magesblog.com/2013/02/first-steps-of-using-googlevis-on-shiny.html
+ui = shinyUI(tabsetPanel(tabPanel("Longitudinal Data",
+        pageWithSidebar(
+          headerPanel("US Nursing Home Proportions of Deficiencies and Penalties"),
+          sidebarPanel(
+            selectInput('myData', selected = "Deficiencies", 'Choose a Variable:', 
+                        c("Deficiencies", "Penalties")),
+    
+            sliderInput("year", "Year to be displayed:", 
+                        min = 2010, max = 2015, value = 2010,  step = 1,
+                        sep = "", animate = animationOptions(interval = 4000,loop = FALSE))),
+      
+          mainPanel(h3(textOutput("text")),
+          htmlOutput("gvis")))),
+    
+        tabPanel("Static Data",
+          titlePanel("Nursing Home Summaries"),
+          sidebarLayout(
+          sidebarPanel(
+          selectInput("dataset", "Choose a subset:",
+                      choices = c("Medicare", "Medicaid", "Medicare and Medicaid")),
+    
+          numericInput("obs", "Number of observations to view:", 10)),
+    
+          mainPanel(
+            h4("Summary"),
+            verbatimTextOutput("summary"),
+        
+            h4("Observations"),
+            tableOutput("view")))
+        )
+    
+      )
+    ),
+
+  #Source: http://www.magesblog.com/2013/02/first-steps-of-using-googlevis-on-shiny.html
+server = shinyServer(function(input, output) {
+          myYear <- reactive({
+          input$year
+          })
+  
+         percentageInput <- reactive({
+          switch(input$myData,
+            "Deficiencies" = shinyDefData,
+            "Penalties" = shinyPenData)
+         })
+  
+          output$text <- renderText({
+            paste("Proportion by state in", myYear())
+          })
+  
+        output$gvis <- renderGvis({
+            year2<-myYear()
+            percentageData<-percentageInput()
+    
+        if (input$myData=="Deficiencies"){
+            percentageData<-shinyDefData
+            }
+        else {
+            percentageData<- shinyPenData
+            }
+    
+    myData2 <- subset(percentageData,
+                      ((year > year2-1) & (year < year2+1))
+                      )
+      
+    gvisGeoChart(myData2,
+                 locationvar="state", colorvar="percentage",
+                 options=list(region="US", displayMode="regions",
+                              resolution="provinces",
+                              width=1000, height=800,
+                              colorAxis="{values:[0,1,5,10,15,25,50,100],
+                              colors:[\'#fee0d2',\'#fcbba1',\'#fc9272',\'#fb6a4a',\'#ef3b2c',
+                              \'#cb181d', \'#a50f15',\'#67000d']}"
+                              
+                 ))
+})
+  
+   #Source: http://shiny.rstudio.com/gallery/reactivity.html
+  datasetInput <- reactive({
+    switch(input$dataset,
+           "Medicare" = medicareOnly,
+           "Medicaid" = medicaidOnly,
+           "Medicare and Medicaid" = medicareAndMedicaidOnly)
+  })
+  
+  output$summary <- renderPrint({
+    dataset <- datasetInput()
+    summary(dataset)
+  })
+  
+  output$view <- renderTable({
+    head(datasetInput(), n = input$obs)
+  })
+})
+
+)
+```
+\
+
+<h3>Part 3</h3>
+
+The final Shiny application is currently hosted on an RStudio server and can be accessed at the link: https://sgille3.shinyapps.io/INFO550Project/
