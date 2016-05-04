@@ -3,7 +3,7 @@ library(shiny)
 library(dplyr)
 library(RSQLite)
 
-#setwd("C:/Users/sgille3/Projects/Course Work/INFO - Software Engineering/Project 1")
+
 projectBdplyr         <- dplyr::src_sqlite(path="www/finalProjectDB.db")
 deficienciesPenalties <- as.data.frame(tbl(projectBdplyr, "deficienciesPenaltiesFinal"))
 providers             <- as.data.frame(tbl(projectBdplyr, "providersQuery"))
